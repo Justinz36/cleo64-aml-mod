@@ -18,7 +18,7 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Download AML headers
+      - name: Download AML template
         shell: bash
         run: |
           set -e
@@ -28,14 +28,17 @@ jobs:
             aml-src
 
           test -f aml-src/template_of_mod/mod/amlmod.h
+          test -f aml-src/template_of_mod/mod/logger.h
+          test -f aml-src/template_of_mod/mod/logger.cpp
 
           mkdir -p aml-include
           cp -R aml-src/template_of_mod/mod aml-include/
 
           test -f aml-include/mod/amlmod.h
           test -f aml-include/mod/logger.h
+          test -f aml-include/mod/logger.cpp
 
-          echo "AML headers copied successfully"
+          echo "AML template copied successfully"
 
       - name: Locate Android SDK tools
         shell: bash
@@ -105,11 +108,9 @@ jobs:
           test -f src/main.cpp
           test -f aml-include/mod/amlmod.h
           test -f aml-include/mod/logger.h
+          test -f aml-include/mod/logger.cpp
 
-          echo "Project files:"
-          find . -maxdepth 3 -type f \
-            \( -name "*.cpp" -o -name "*.h" -o -name "*.txt" \) \
-            -print
+          echo "All project files found"
 
       - name: Configure ARM64 build
         shell: bash
