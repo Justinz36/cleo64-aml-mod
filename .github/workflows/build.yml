@@ -18,51 +18,56 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
+      - name: Download AML source
+        shell: bash
+        run: |
+          set -e
+          git clone --depth 1 https://github.com/RusJJ/AndroidModLoader.git aml-src
+          test -d aml-src/include
+
       - name: Locate Android SDK tools
         shell: bash
         run: |
           set -e
 
-          echo "SDK root: $ANDROID_SDK_ROOT"
-
           if [ -x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
-            echo "SDKMANAGER=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" >> "$GITHUB_ENV"
+            SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
           elif [ -x "$ANDROID_SDK_ROOT/cmdline-tools/16.0/bin/sdkmanager" ]; then
-            echo "SDKMANAGER=$ANDROID_SDK_ROOT/cmdline-tools/16.0/bin/sdkmanager" >> "$GITHUB_ENV"
+            SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/16.0/bin/sdkmanager"
           else
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -name sdkmanager -type f | head -n 1)"
-            echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" \
+              -name sdkmanager -type f | head -n 1)"
           fi
+
+          test -n "$SDKMANAGER"
+          echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
+          echo "Using SDK manager: $SDKMANAGER"
 
       - name: Install required Android packages
         shell: bash
         run: |
           set -e
 
-          echo "Using: $SDKMANAGER"
-
-          yes | "$SDKMANAGER" --sdk_root="$ANDROID_SDK_ROOT" --licenses > /dev/null || true
+          yes | "$SDKMANAGER" \
+            --sdk_root="$ANDROID_SDK_ROOT" \
+            --licenses > /dev/null || true
 
           "$SDKMANAGER" --sdk_root="$ANDROID_SDK_ROOT" "platform-tools"
           "$SDKMANAGER" --sdk_root="$ANDROID_SDK_ROOT" "platforms;android-21"
           "$SDKMANAGER" --sdk_root="$ANDROID_SDK_ROOT" "cmake;3.22.1"
           "$SDKMANAGER" --sdk_root="$ANDROID_SDK_ROOT" "ndk;26.3.11579264"
 
-      - name: Find installed NDK
+      - name: Set Android NDK path
         shell: bash
         run: |
           set -e
 
           NDK_DIR="$ANDROID_SDK_ROOT/ndk/26.3.11579264"
 
-          if [ ! -d "$NDK_DIR" ]; then
-            echo "NDK was not found"
-            find "$ANDROID_SDK_ROOT/ndk" -maxdepth 2 -type d || true
-            exit 1
-          fi
+          test -d "$NDK_DIR"
 
           echo "ANDROID_NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
-          echo "NDK found at $NDK_DIR"
+          echo "NDK found at: $NDK_DIR"
 
       - name: Configure ARM64 build
         shell: bash
@@ -79,7 +84,9 @@ jobs:
         shell: bash
         run: |
           set -e
-          cmake --build build-arm64 --config Release --parallel 2
+          cmake --build build-arm64 \
+            --config Release \
+            --parallel 2
 
       - name: Verify ARM64 output
         shell: bash
@@ -92,7 +99,8 @@ jobs:
 
           file build-arm64/out/libcleo64.so
 
-          readelf -h build-arm64/out/libcleo64.so | grep -E "Class|Machine"
+          readelf -h build-arm64/out/libcleo64.so \
+            | grep -E "Class|Machine"
 
       - name: Upload ARM64 library
         uses: actions/upload-artifact@v4
