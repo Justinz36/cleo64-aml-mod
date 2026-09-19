@@ -4,6 +4,7 @@ project(cleo64 LANGUAGES CXX)
 
 add_library(cleo64 SHARED
     src/main.cpp
+    aml-include/mod/logger.cpp
 )
 
 target_include_directories(cleo64 PRIVATE
@@ -11,6 +12,10 @@ target_include_directories(cleo64 PRIVATE
 )
 
 target_compile_features(cleo64 PRIVATE cxx_std_17)
+
+target_compile_definitions(cleo64 PRIVATE
+    DONT_USE_STB
+)
 
 target_compile_options(cleo64 PRIVATE
     -Wall
