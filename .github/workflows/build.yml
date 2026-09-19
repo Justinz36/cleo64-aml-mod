@@ -14,12 +14,22 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Install Android SDK tools
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: |
+            platform-tools
+            platforms;android-21
+            build-tools;35.0.0
+            cmake;3.22.1
+            ndk;26.3.11579264
 
-      - name: Install Android NDK and CMake
+      - name: Show Android environment
         run: |
-          sdkmanager "platform-tools" "platforms;android-21" "build-tools;35.0.0" "cmake;3.22.1" "ndk;26.3.11579264"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+          sdkmanager --list | head -40
 
       - name: Configure ARM64 build
         run: |
@@ -27,16 +37,17 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-21 \
-            -DANDROID_NDK="$ANDROID_NDK_HOME"
+            -DANDROID_PLATFORM=android-21
 
       - name: Compile
-        run: cmake --build build-arm64 --config Release --parallel 2
+        run: |
+          cmake --build build-arm64 --config Release --parallel 2
 
       - name: Verify output
         run: |
-          ls -l build-arm64/out
+          find build-arm64 -type f -name "*.so" -print
           file build-arm64/out/libcleo64.so
+          readelf -h build-arm64/out/libcleo64.so | grep -E "Class|Machine"
 
       - name: Upload ARM64 library
         uses: actions/upload-artifact@v4
