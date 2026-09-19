@@ -14,28 +14,30 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Setup Android SDK
+      - name: Setup Android command line tools
         uses: android-actions/setup-android@v3
-        with:
-          packages: |
-            platform-tools
-            platforms;android-21
-            build-tools;35.0.0
-            cmake;3.22.1
-            ndk;26.3.11579264
 
-      - name: Show Android environment
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-21" \
+            "build-tools;35.0.0" \
+            "cmake;3.22.1" \
+            "ndk;26.3.11579264"
+
+      - name: Find Android NDK
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
-          sdkmanager --list | head -40
+          find "$ANDROID_SDK_ROOT/ndk" -maxdepth 2 -type d -print
 
       - name: Configure ARM64 build
         run: |
           cmake -S . -B build-arm64 -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_SDK_ROOT/ndk/26.3.11579264/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-21
 
