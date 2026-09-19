@@ -12,7 +12,7 @@
 MYMOD(
     net.justinz36.cleo64,
     CLEO64,
-    0.4,
+    0.5,
     JustinZ36
 )
 
@@ -42,13 +42,13 @@ static void write_loaded_marker(const char* stage)
 
             std::fclose(file);
 
-            CLEO64_LOG("Marker updated: %s", path);
+            CLEO64_LOG("Marker written: %s", path);
             CLEO64_LOG("Stage: %s", stage);
             return;
         }
     }
 
-    CLEO64_LOG("Could not write cleo64_loaded.txt");
+    CLEO64_LOG("Could not write marker file");
 }
 
 __attribute__((constructor))
@@ -58,18 +58,18 @@ static void cleo64_library_loaded()
     write_loaded_marker("constructor");
 }
 
-extern "C" void OnModLoad()
+ON_MOD_LOAD()
 {
     CLEO64_LOG("OnModLoad entered");
 
-    // เขียนทับ marker จาก constructor ด้วย Stage: OnModLoad
+    // เขียนทับ Stage: constructor
     write_loaded_marker("OnModLoad");
 
     if (logger != nullptr)
     {
         logger->SetTag("CLEO64");
         logger->Info("CLEO64 AML ARM64 mod loaded successfully");
-        logger->Info("CLEO64 OnModLoad marker written");
+        logger->Info("CLEO64 OnModLoad callback reached");
     }
 
     CLEO64_LOG("CLEO64 initialization finished");
