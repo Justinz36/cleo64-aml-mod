@@ -10,8 +10,8 @@ MYMOD(
 
 NEEDGAME(com.rockstargames.gtasa)
 
-ON_MOD_LOAD()
+extern "C" void OnModLoad()
 {
     logger->SetTag("CLEO64");
-    logger->Info("CLEO64 AML mod loaded");
+    logger->Info("CLEO64 AML ARM64 mod loaded successfully");
 }
