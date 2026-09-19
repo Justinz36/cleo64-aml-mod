@@ -1,7 +1,10 @@
 #include <android/log.h>
+
 #include <cstdio>
 #include <cstring>
 #include <dirent.h>
+#include <strings.h>
+
 #include <string>
 #include <vector>
 
@@ -16,7 +19,7 @@
 MYMOD(
     net.justinz36.cleo64,
     CLEO64,
-    0.6,
+    0.7,
     JustinZ36
 )
 
@@ -33,16 +36,27 @@ static std::vector<ScriptEntry> g_scripts;
 
 static const char* get_script_directory()
 {
-    return "/storage/emulated/0/Android_unprotected/data/"
-           "com.rockstargames.gtasa/files/mods/cleo";
+    return
+        "/storage/emulated/0/Android_unprotected/data/"
+        "com.rockstargames.gtasa";
 }
 
-static bool has_extension(const char* name, const char* extension)
+static const char* get_menu_marker_path()
 {
-    if (name == nullptr || extension == nullptr)
+    return
+        "/storage/emulated/0/Android_unprotected/data/"
+        "com.rockstargames.gtasa/cleo64_menu.txt";
+}
+
+static bool has_extension(
+    const char* filename,
+    const char* extension
+)
+{
+    if (filename == nullptr || extension == nullptr)
         return false;
 
-    const char* dot = std::strrchr(name, '.');
+    const char* dot = std::strrchr(filename, '.');
 
     if (dot == nullptr)
         return false;
@@ -54,12 +68,15 @@ static void scan_cleo_scripts()
 {
     g_scripts.clear();
 
-    const char* directory_path = get_script_directory();
-    DIR* directory = opendir(directory_path);
+    const char* directoryPath = get_script_directory();
+    DIR* directory = opendir(directoryPath);
 
     if (directory == nullptr)
     {
-        CLEO64_LOG("Script directory not found: %s", directory_path);
+        CLEO64_LOG(
+            "Script directory not found: %s",
+            directoryPath
+        );
         return;
     }
 
@@ -67,63 +84,82 @@ static void scan_cleo_scripts()
 
     while ((entry = readdir(directory)) != nullptr)
     {
+        const char* filename = entry->d_name;
+
+        if (filename == nullptr)
+            continue;
+
+        if (std::strcmp(filename, ".") == 0 ||
+            std::strcmp(filename, "..") == 0)
+        {
+            continue;
+        }
+
+        // ค้นหาเฉพาะไฟล์ในโฟลเดอร์หลัก
+        // ไม่เข้าไปค้นหาใน configs, files หรือ mods
         if (entry->d_type == DT_DIR)
             continue;
 
-        const char* filename = entry->d_name;
+        bool isCsi = has_extension(filename, ".csi");
+        bool isCsa = has_extension(filename, ".csa");
 
-        if (has_extension(filename, ".csi"))
-        {
-            g_scripts.push_back({
-                filename,
-                std::string(directory_path) + "/" + filename,
-                false
-            });
-        }
-        else if (has_extension(filename, ".csa"))
-        {
-            g_scripts.push_back({
-                filename,
-                std::string(directory_path) + "/" + filename,
-                true
-            });
-        }
+        if (!isCsi && !isCsa)
+            continue;
+
+        ScriptEntry script;
+        script.name = filename;
+        script.path =
+            std::string(directoryPath) + "/" + filename;
+        script.autoStart = isCsa;
+
+        g_scripts.push_back(script);
     }
 
     closedir(directory);
 
-    CLEO64_LOG("Script scan complete: %zu script(s)", g_scripts.size());
+    CLEO64_LOG(
+        "Script scan complete: %zu script(s)",
+        g_scripts.size()
+    );
 
     for (size_t i = 0; i < g_scripts.size(); ++i)
     {
         CLEO64_LOG(
-            "Menu item %zu: %s%s",
+            "Script %zu: %s%s",
             i + 1,
             g_scripts[i].name.c_str(),
-            g_scripts[i].autoStart ? " [AUTO]" : ""
+            g_scripts[i].autoStart
+                ? " [AUTO]"
+                : ""
         );
     }
 }
 
 static void write_menu_marker()
 {
-    const char* marker_path =
-        "/storage/emulated/0/Android_unprotected/data/"
-        "com.rockstargames.gtasa/files/cleo64_menu.txt";
+    const char* markerPath = get_menu_marker_path();
 
-    FILE* file = std::fopen(marker_path, "w");
+    FILE* file = std::fopen(markerPath, "w");
 
     if (file == nullptr)
     {
-        CLEO64_LOG("Could not write menu marker");
+        CLEO64_LOG(
+            "Could not write marker: %s",
+            markerPath
+        );
         return;
     }
 
-    std::fprintf(file, "CLEO64 menu backend ready\n");
-    std::fprintf(file, "ABI: arm64-v8a\n");
-    std::fprintf(file, "Package: com.rockstargames.gtasa\n");
-    std::fprintf(file, "Script directory: %s\n", get_script_directory());
-    std::fprintf(file, "Script count: %zu\n\n", g_scripts.size());
+    std::fprintf(
+        file,
+        "CLEO64 menu backend ready\n"
+        "ABI: arm64-v8a\n"
+        "Package: com.rockstargames.gtasa\n"
+        "Script directory: %s\n"
+        "Script count: %zu\n\n",
+        get_script_directory(),
+        g_scripts.size()
+    );
 
     for (size_t i = 0; i < g_scripts.size(); ++i)
     {
@@ -132,23 +168,39 @@ static void write_menu_marker()
             "%zu. %s%s\n",
             i + 1,
             g_scripts[i].name.c_str(),
-            g_scripts[i].autoStart ? " [AUTO]" : ""
+            g_scripts[i].autoStart
+                ? " [AUTO]"
+                : ""
         );
     }
 
     std::fclose(file);
 
-    CLEO64_LOG("Menu marker written: %s", marker_path);
+    CLEO64_LOG(
+        "Menu marker written: %s",
+        markerPath
+    );
+}
+
+__attribute__((constructor))
+static void cleo64_library_loaded()
+{
+    CLEO64_LOG("==============================");
+    CLEO64_LOG("CLEO64 library loaded");
+    CLEO64_LOG("ABI: arm64-v8a");
+    CLEO64_LOG("==============================");
 }
 
 ON_MOD_LOAD()
 {
-    CLEO64_LOG("CLEO64 menu backend starting");
+    CLEO64_LOG("CLEO64 OnModLoad entered");
 
     if (logger != nullptr)
     {
         logger->SetTag("CLEO64");
-        logger->Info("CLEO64 menu backend loaded");
+        logger->Info(
+            "CLEO64 menu backend starting"
+        );
     }
 
     scan_cleo_scripts();
@@ -160,5 +212,13 @@ ON_MOD_LOAD()
             "CLEO64 found %zu script(s)",
             g_scripts.size()
         );
+
+        logger->Info(
+            "CLEO64 menu backend ready"
+        );
     }
+
+    CLEO64_LOG(
+        "CLEO64 initialization finished"
+    );
 }
