@@ -6,6 +6,9 @@ add_library(cleo64 SHARED
     src/main.cpp
 )
 
+target_include_directories(cleo64 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/aml-src/include
+)
 target_compile_features(cleo64 PRIVATE cxx_std_17)
 
 target_compile_options(cleo64 PRIVATE
