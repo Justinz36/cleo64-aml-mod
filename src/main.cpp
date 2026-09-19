@@ -1,16 +1,17 @@
-#include <android/log.h>
+#include <mod/amlmod.h>
+#include <mod/logger.h>
 
-#define LOG_TAG "CLEO64"
+MYMOD(
+    net.justinz36.cleo64,
+    CLEO64,
+    0.1,
+    JustinZ36
+)
 
-#define LOGI(...) \
-    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+NEEDGAME(com.rockstargames.gtasa)
 
-extern "C" __attribute__((visibility("default")))
-void cleo64_test_log() {
-    LOGI("CLEO64 ARM64 test function called");
-}
-
-__attribute__((constructor))
-static void on_library_loaded() {
-    LOGI("CLEO64 library loaded successfully");
+ON_MOD_LOAD()
+{
+    logger->SetTag("CLEO64");
+    logger->Info("CLEO64 AML mod loaded");
 }
