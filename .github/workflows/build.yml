@@ -1,4 +1,4 @@
-name: Build AML_ImGui and CLEO64 ARM64
+name: Build Diagnostic AML_ImGui and CLEO64 ARM64
 
 on:
   workflow_dispatch:
@@ -127,7 +127,6 @@ jobs:
           cd ..
 
           test -f imgui-src/Android.mk
-          test -f imgui-src/Application.mk
           test -f imgui-src/main.cpp
           test -f imgui-src/main.h
           test -f imgui-src/iimgui.cpp
@@ -163,10 +162,60 @@ jobs:
           echo "=== AML_ImGui Application.mk ==="
           cat imgui-src/Application.mk
 
-          echo "=== stb_sprintf.h ==="
-          ls -l imgui-src/stb/stb_sprintf.h
+      - name: Disable incompatible AML_ImGui hooks
+        shell: bash
+        run: |
+          set -e
 
-      - name: Build AML_ImGui ARM64
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("imgui-src/main.cpp")
+          text = path.read_text()
+
+          marker = 'extern "C" void OnModLoad()'
+          start = text.find(marker)
+
+          if start < 0:
+              raise SystemExit(
+                  "Could not find AML_ImGui OnModLoad function"
+              )
+
+          diagnostic_load = r'''
+          extern "C" void OnModLoad()
+          {
+              logger->Info(
+                  "Dear ImGui diagnostic provider loaded"
+              );
+
+              logger->Info(
+                  "All GTA hardcoded hooks are disabled"
+              );
+
+              logger->Info(
+                  "RenderWare hook: disabled"
+              );
+
+              logger->Info(
+                  "Touch hook: disabled"
+              );
+
+              logger->Info(
+                  "Keyboard hook: disabled"
+              );
+          }
+          '''
+
+          path.write_text(
+              text[:start] + diagnostic_load
+          )
+          PY
+
+          grep -A25 -B3 \
+            'extern "C" void OnModLoad' \
+            imgui-src/main.cpp
+
+      - name: Build diagnostic AML_ImGui ARM64
         shell: bash
         run: |
           set -e
@@ -248,7 +297,7 @@ jobs:
         run: |
           set -e
 
-          echo "=== Verify AML_ImGui ==="
+          echo "=== Verify diagnostic AML_ImGui ==="
 
           file \
             artifacts/aml-imgui/arm64-v8a/libDearImGui.so
@@ -266,7 +315,7 @@ jobs:
             artifacts/cleo64/libcleo64.so \
             | grep -E "Class|Machine"
 
-      - name: Prepare final mod package
+      - name: Prepare diagnostic package
         shell: bash
         run: |
           set -e
@@ -282,37 +331,49 @@ jobs:
             final-package/libcleo64.so
 
           cat > final-package/README.txt <<'EOF'
-          GTA SA Android ARM64 mod package
+          GTA SA Android ARM64 diagnostic package
 
           Target ABI: arm64-v8a
-          Provider: libDearImGui.so
-          Consumer: libcleo64.so
+
+          Files:
+          - libDearImGui.so
+          - libcleo64.so
+
+          Important:
+          This is a diagnostic AML_ImGui build.
+          GTA hardcoded RenderWare, touch, and keyboard hooks
+          are disabled.
 
           Install both .so files into:
           Android_unprotected/data/com.rockstargames.gtasa/files/mods/
+
+          This diagnostic build is intended to verify that the
+          provider loads without crashing. It does not display
+          the ImGui menu yet.
           EOF
 
           find final-package \
             -type f \
             -printf '%P %s bytes\n'
 
-      - name: Upload combined mod package
+      - name: Upload combined diagnostic package
         uses: actions/upload-artifact@v4
         with:
-          name: gta-sa-arm64-aml-imgui-cleo64
+          name: gta-sa-arm64-diagnostic-imgui-cleo64
           path: final-package
           if-no-files-found: error
 
-      - name: Upload AML_ImGui separately
+      - name: Upload diagnostic AML_ImGui separately
         uses: actions/upload-artifact@v4
         with:
-          name: aml-imgui-arm64
+          name: aml-imgui-arm64-diagnostic
           path: artifacts/aml-imgui/arm64-v8a/libDearImGui.so
           if-no-files-found: error
 
       - name: Upload CLEO64 separately
         uses: actions/upload-artifact@v4
         with:
-          name: cleo64-arm64
+          name: cleo64-arm64-imgui-consumer
           path: artifacts/cleo64/libcleo64.so
           if-no-files-found: error
+concurrency:
