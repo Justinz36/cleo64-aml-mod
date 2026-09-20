@@ -74,6 +74,7 @@ jobs:
           NDK_DIR="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
 
           test -d "$NDK_DIR"
+          test -x "$NDK_DIR/ndk-build"
 
           echo "ANDROID_NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
           echo "NDK_BUILD=$NDK_DIR/ndk-build" >> "$GITHUB_ENV"
@@ -83,7 +84,8 @@ jobs:
         run: |
           set -e
 
-          git clone --depth 1 \
+          git clone \
+            --depth 1 \
             https://github.com/RusJJ/AndroidModLoader.git \
             aml-src
 
@@ -108,37 +110,49 @@ jobs:
           test -f aml-include/mod/logger.cpp
           test -f aml-include/mod/interface.h
 
-      - name: Download AML_ImGui
+      - name: Download AML_ImGui with submodules
         shell: bash
         run: |
           set -e
 
-          git clone --depth 1 \
+          git clone \
+            --depth 1 \
+            --recurse-submodules \
+            --shallow-submodules \
             https://github.com/AndroidModLoader/AML_ImGui.git \
             imgui-src
+
+          cd imgui-src
+          git submodule update --init --recursive
+          cd ..
 
           test -f imgui-src/Android.mk
           test -f imgui-src/Application.mk
           test -f imgui-src/main.cpp
+          test -f imgui-src/main.h
           test -f imgui-src/iimgui.cpp
           test -f imgui-src/iimgui.h
+          test -f imgui-src/imgui.cpp
+          test -f imgui-src/imgui_draw.cpp
+          test -f imgui-src/imgui_tables.cpp
+          test -f imgui-src/imgui_widgets.cpp
           test -f imgui-src/backends/imgui_impl_renderware.cpp
           test -f imgui-src/RW/RenderWare.cpp
+          test -f imgui-src/stb/stb_sprintf.h
 
       - name: Prepare AML_ImGui dependencies
         shell: bash
         run: |
           set -e
 
-          # AML_ImGui Android.mk ต้องการ mod/logger.cpp
           cp -R \
             aml-src/template_of_mod/mod \
             imgui-src/mod
 
           test -f imgui-src/mod/logger.cpp
           test -f imgui-src/mod/logger.h
+          test -f imgui-src/stb/stb_sprintf.h
 
-          # บังคับ architecture เป็น ARM64
           cat > imgui-src/Application.mk <<'EOF'
           APP_STL := c++_static
           APP_ABI := arm64-v8a
@@ -146,7 +160,11 @@ jobs:
           APP_CPPFLAGS += -std=c++17
           EOF
 
+          echo "=== AML_ImGui Application.mk ==="
           cat imgui-src/Application.mk
+
+          echo "=== stb_sprintf.h ==="
+          ls -l imgui-src/stb/stb_sprintf.h
 
       - name: Build AML_ImGui ARM64
         shell: bash
@@ -166,7 +184,8 @@ jobs:
             NDK_LIBS_OUT="$GITHUB_WORKSPACE/artifacts/aml-imgui" \
             V=1
 
-          test -f artifacts/aml-imgui/arm64-v8a/libDearImGui.so
+          test -f \
+            artifacts/aml-imgui/arm64-v8a/libDearImGui.so
 
       - name: Copy AML_ImGui interface header
         shell: bash
@@ -219,6 +238,7 @@ jobs:
           test -f build-cleo64/out/libcleo64.so
 
           mkdir -p artifacts/cleo64
+
           cp \
             build-cleo64/out/libcleo64.so \
             artifacts/cleo64/libcleo64.so
@@ -228,14 +248,20 @@ jobs:
         run: |
           set -e
 
-          echo "=== AML_ImGui ==="
-          file artifacts/aml-imgui/arm64-v8a/libDearImGui.so
+          echo "=== Verify AML_ImGui ==="
+
+          file \
+            artifacts/aml-imgui/arm64-v8a/libDearImGui.so
+
           readelf -h \
             artifacts/aml-imgui/arm64-v8a/libDearImGui.so \
             | grep -E "Class|Machine"
 
-          echo "=== CLEO64 ==="
-          file artifacts/cleo64/libcleo64.so
+          echo "=== Verify CLEO64 ==="
+
+          file \
+            artifacts/cleo64/libcleo64.so
+
           readelf -h \
             artifacts/cleo64/libcleo64.so \
             | grep -E "Class|Machine"
@@ -255,14 +281,20 @@ jobs:
             artifacts/cleo64/libcleo64.so \
             final-package/libcleo64.so
 
-          printf '%s\n' \
-            'GTA SA Android ARM64 mod package' \
-            'Target ABI: arm64-v8a' \
-            'Provider: libDearImGui.so' \
-            'Consumer: libcleo64.so' \
-            > final-package/README.txt
+          cat > final-package/README.txt <<'EOF'
+          GTA SA Android ARM64 mod package
 
-          find final-package -type f -printf '%P %s bytes\n'
+          Target ABI: arm64-v8a
+          Provider: libDearImGui.so
+          Consumer: libcleo64.so
+
+          Install both .so files into:
+          Android_unprotected/data/com.rockstargames.gtasa/files/mods/
+          EOF
+
+          find final-package \
+            -type f \
+            -printf '%P %s bytes\n'
 
       - name: Upload combined mod package
         uses: actions/upload-artifact@v4
