@@ -1,4 +1,4 @@
-name: Build CLEO64 ARM64
+name: Build AML_ImGui and CLEO64 ARM64
 
 on:
   workflow_dispatch:
@@ -13,51 +13,11 @@ jobs:
     env:
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
       ANDROID_HOME: /usr/local/lib/android/sdk
+      NDK_VERSION: 26.3.11579264
 
     steps:
-      - name: Checkout source
+      - name: Checkout CLEO64
         uses: actions/checkout@v4
-
-      - name: Download AML source
-        shell: bash
-        run: |
-          set -e
-
-          git clone --depth 1 \
-            https://github.com/RusJJ/AndroidModLoader.git \
-            aml-src
-
-          test -f aml-src/template_of_mod/mod/amlmod.h
-          test -f aml-src/template_of_mod/mod/logger.h
-          test -f aml-src/template_of_mod/mod/logger.cpp
-
-          mkdir -p aml-include
-
-          cp -R \
-            aml-src/template_of_mod/mod \
-            aml-include/
-
-          test -f aml-include/mod/amlmod.h
-          test -f aml-include/mod/logger.h
-          test -f aml-include/mod/logger.cpp
-
-      - name: Download AML_ImGui interface header
-        shell: bash
-        run: |
-          set -e
-
-          git clone --depth 1 \
-            https://github.com/AndroidModLoader/AML_ImGui.git \
-            imgui-src
-
-          test -f imgui-src/iimgui.h
-
-          mkdir -p aml-include/imgui
-
-          cp imgui-src/iimgui.h \
-            aml-include/imgui/iimgui.h
-
-          test -f aml-include/imgui/iimgui.h
 
       - name: Locate Android SDK tools
         shell: bash
@@ -81,7 +41,7 @@ jobs:
 
           echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
 
-      - name: Install Android packages
+      - name: Install Android SDK and NDK
         shell: bash
         run: |
           set -e
@@ -104,20 +64,124 @@ jobs:
 
           "$SDKMANAGER" \
             --sdk_root="$ANDROID_SDK_ROOT" \
-            "ndk;26.3.11579264"
+            "ndk;$NDK_VERSION"
 
-      - name: Set NDK path
+      - name: Set Android NDK path
         shell: bash
         run: |
           set -e
 
-          NDK_DIR="$ANDROID_SDK_ROOT/ndk/26.3.11579264"
+          NDK_DIR="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
 
           test -d "$NDK_DIR"
 
           echo "ANDROID_NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
+          echo "NDK_BUILD=$NDK_DIR/ndk-build" >> "$GITHUB_ENV"
 
-      - name: Check project files
+      - name: Download AndroidModLoader source
+        shell: bash
+        run: |
+          set -e
+
+          git clone --depth 1 \
+            https://github.com/RusJJ/AndroidModLoader.git \
+            aml-src
+
+          test -f aml-src/template_of_mod/mod/amlmod.h
+          test -f aml-src/template_of_mod/mod/logger.h
+          test -f aml-src/template_of_mod/mod/logger.cpp
+          test -f aml-src/template_of_mod/mod/interface.h
+
+      - name: Prepare AML headers
+        shell: bash
+        run: |
+          set -e
+
+          mkdir -p aml-include
+
+          cp -R \
+            aml-src/template_of_mod/mod \
+            aml-include/
+
+          test -f aml-include/mod/amlmod.h
+          test -f aml-include/mod/logger.h
+          test -f aml-include/mod/logger.cpp
+          test -f aml-include/mod/interface.h
+
+      - name: Download AML_ImGui
+        shell: bash
+        run: |
+          set -e
+
+          git clone --depth 1 \
+            https://github.com/AndroidModLoader/AML_ImGui.git \
+            imgui-src
+
+          test -f imgui-src/Android.mk
+          test -f imgui-src/Application.mk
+          test -f imgui-src/main.cpp
+          test -f imgui-src/iimgui.cpp
+          test -f imgui-src/iimgui.h
+          test -f imgui-src/backends/imgui_impl_renderware.cpp
+          test -f imgui-src/RW/RenderWare.cpp
+
+      - name: Prepare AML_ImGui dependencies
+        shell: bash
+        run: |
+          set -e
+
+          # AML_ImGui Android.mk ต้องการ mod/logger.cpp
+          cp -R \
+            aml-src/template_of_mod/mod \
+            imgui-src/mod
+
+          test -f imgui-src/mod/logger.cpp
+          test -f imgui-src/mod/logger.h
+
+          # บังคับ architecture เป็น ARM64
+          cat > imgui-src/Application.mk <<'EOF'
+          APP_STL := c++_static
+          APP_ABI := arm64-v8a
+          APP_PLATFORM := android-21
+          APP_CPPFLAGS += -std=c++17
+          EOF
+
+          cat imgui-src/Application.mk
+
+      - name: Build AML_ImGui ARM64
+        shell: bash
+        run: |
+          set -e
+
+          mkdir -p artifacts/aml-imgui
+
+          "$NDK_BUILD" \
+            -C imgui-src \
+            NDK_PROJECT_PATH=. \
+            APP_BUILD_SCRIPT=Android.mk \
+            NDK_APPLICATION_MK=Application.mk \
+            APP_ABI=arm64-v8a \
+            APP_PLATFORM=android-21 \
+            NDK_OUT="$GITHUB_WORKSPACE/ndk-out-imgui" \
+            NDK_LIBS_OUT="$GITHUB_WORKSPACE/artifacts/aml-imgui" \
+            V=1
+
+          test -f artifacts/aml-imgui/arm64-v8a/libDearImGui.so
+
+      - name: Copy AML_ImGui interface header
+        shell: bash
+        run: |
+          set -e
+
+          mkdir -p aml-include/imgui
+
+          cp \
+            imgui-src/iimgui.h \
+            aml-include/imgui/iimgui.h
+
+          test -f aml-include/imgui/iimgui.h
+
+      - name: Check CLEO64 project files
         shell: bash
         run: |
           set -e
@@ -127,45 +191,96 @@ jobs:
           test -f aml-include/mod/amlmod.h
           test -f aml-include/mod/logger.h
           test -f aml-include/mod/logger.cpp
+          test -f aml-include/mod/interface.h
           test -f aml-include/imgui/iimgui.h
 
-      - name: Configure ARM64 build
+      - name: Configure CLEO64 ARM64
         shell: bash
         run: |
           set -e
 
           cmake -S . \
-            -B build-arm64 \
+            -B build-cleo64 \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-21
 
-      - name: Compile
+      - name: Build CLEO64 ARM64
         shell: bash
         run: |
           set -e
 
-          cmake --build build-arm64 \
+          cmake --build build-cleo64 \
             --config Release \
             --parallel 2
 
-      - name: Verify ARM64 output
+          test -f build-cleo64/out/libcleo64.so
+
+          mkdir -p artifacts/cleo64
+          cp \
+            build-cleo64/out/libcleo64.so \
+            artifacts/cleo64/libcleo64.so
+
+      - name: Verify ARM64 libraries
         shell: bash
         run: |
           set -e
 
-          test -f build-arm64/out/libcleo64.so
-
-          file build-arm64/out/libcleo64.so
-
-          readelf -h build-arm64/out/libcleo64.so \
+          echo "=== AML_ImGui ==="
+          file artifacts/aml-imgui/arm64-v8a/libDearImGui.so
+          readelf -h \
+            artifacts/aml-imgui/arm64-v8a/libDearImGui.so \
             | grep -E "Class|Machine"
 
-      - name: Upload CLEO64 library
+          echo "=== CLEO64 ==="
+          file artifacts/cleo64/libcleo64.so
+          readelf -h \
+            artifacts/cleo64/libcleo64.so \
+            | grep -E "Class|Machine"
+
+      - name: Prepare final mod package
+        shell: bash
+        run: |
+          set -e
+
+          mkdir -p final-package
+
+          cp \
+            artifacts/aml-imgui/arm64-v8a/libDearImGui.so \
+            final-package/libDearImGui.so
+
+          cp \
+            artifacts/cleo64/libcleo64.so \
+            final-package/libcleo64.so
+
+          printf '%s\n' \
+            'GTA SA Android ARM64 mod package' \
+            'Target ABI: arm64-v8a' \
+            'Provider: libDearImGui.so' \
+            'Consumer: libcleo64.so' \
+            > final-package/README.txt
+
+          find final-package -type f -printf '%P %s bytes\n'
+
+      - name: Upload combined mod package
         uses: actions/upload-artifact@v4
         with:
-          name: cleo64-arm64-imgui-consumer
-          path: build-arm64/out/libcleo64.so
+          name: gta-sa-arm64-aml-imgui-cleo64
+          path: final-package
+          if-no-files-found: error
+
+      - name: Upload AML_ImGui separately
+        uses: actions/upload-artifact@v4
+        with:
+          name: aml-imgui-arm64
+          path: artifacts/aml-imgui/arm64-v8a/libDearImGui.so
+          if-no-files-found: error
+
+      - name: Upload CLEO64 separately
+        uses: actions/upload-artifact@v4
+        with:
+          name: cleo64-arm64
+          path: artifacts/cleo64/libcleo64.so
           if-no-files-found: error
