@@ -10,6 +10,9 @@
 
 #include <mod/amlmod.h>
 #include <mod/logger.h>
+#include <mod/interface.h>
+
+#include <iimgui.h>
 
 #define CLEO64_TAG "CLEO64"
 
@@ -19,48 +22,33 @@
 MYMOD(
     net.justinz36.cleo64,
     CLEO64,
-    0.8,
+    0.9,
     JustinZ36
 )
 
 NEEDGAME(com.rockstargames.gtasa)
 
+BEGIN_DEPLIST()
+    ADD_DEPENDENCY(net.rusjj.imgui)
+END_DEPLIST()
+
 struct ScriptEntry
 {
     std::string name;
-    std::string path;
     bool autoStart;
 };
 
 static std::vector<ScriptEntry> g_scripts;
-
-static bool g_menuOpen = false;
+static IImGui* g_imgui = nullptr;
+static bool g_menuOpen = true;
 static int g_selectedScript = -1;
+static bool g_listenerRegistered = false;
 
 static const char* get_game_directory()
 {
     return
         "/storage/emulated/0/Android_unprotected/data/"
         "com.rockstargames.gtasa";
-}
-
-static const char* get_script_directory()
-{
-    return get_game_directory();
-}
-
-static const char* get_menu_marker_path()
-{
-    return
-        "/storage/emulated/0/Android_unprotected/data/"
-        "com.rockstargames.gtasa/cleo64_menu.txt";
-}
-
-static const char* get_menu_state_path()
-{
-    return
-        "/storage/emulated/0/Android_unprotected/data/"
-        "com.rockstargames.gtasa/cleo64_menu_state.txt";
 }
 
 static bool has_extension(
@@ -83,7 +71,7 @@ static void scan_cleo_scripts()
 {
     g_scripts.clear();
 
-    const char* directoryPath = get_script_directory();
+    const char* directoryPath = get_game_directory();
     DIR* directory = opendir(directoryPath);
 
     if (directory == nullptr)
@@ -110,8 +98,6 @@ static void scan_cleo_scripts()
             continue;
         }
 
-        // ค้นหาเฉพาะไฟล์ที่อยู่ตรงในโฟลเดอร์เกมหลัก
-        // ไม่ค้นหาใน configs, files หรือ mods
         if (entry->d_type == DT_DIR)
             continue;
 
@@ -123,8 +109,6 @@ static void scan_cleo_scripts()
 
         ScriptEntry script;
         script.name = filename;
-        script.path =
-            std::string(directoryPath) + "/" + filename;
         script.autoStart = isCsa;
 
         g_scripts.push_back(script);
@@ -133,92 +117,26 @@ static void scan_cleo_scripts()
     closedir(directory);
 
     CLEO64_LOG(
-        "Script scan complete: %zu script(s)",
+        "CLEO64 found %zu script(s)",
         g_scripts.size()
     );
-
-    for (size_t i = 0; i < g_scripts.size(); ++i)
-    {
-        CLEO64_LOG(
-            "Script %zu: %s%s",
-            i + 1,
-            g_scripts[i].name.c_str(),
-            g_scripts[i].autoStart ? " [AUTO]" : ""
-        );
-    }
 }
 
-static void write_menu_marker()
+static void write_selection_marker()
 {
-    const char* markerPath = get_menu_marker_path();
+    const char* markerPath =
+        "/storage/emulated/0/Android_unprotected/data/"
+        "com.rockstargames.gtasa/cleo64_imgui_selection.txt";
 
     FILE* file = std::fopen(markerPath, "w");
 
     if (file == nullptr)
     {
-        CLEO64_LOG(
-            "Could not write menu marker: %s",
-            markerPath
-        );
+        CLEO64_LOG("Could not write selection marker");
         return;
     }
 
-    std::fprintf(
-        file,
-        "CLEO64 menu backend ready\n"
-        "ABI: arm64-v8a\n"
-        "Package: com.rockstargames.gtasa\n"
-        "Script directory: %s\n"
-        "Script count: %zu\n\n",
-        get_script_directory(),
-        g_scripts.size()
-    );
-
-    for (size_t i = 0; i < g_scripts.size(); ++i)
-    {
-        std::fprintf(
-            file,
-            "%zu. %s%s\n",
-            i + 1,
-            g_scripts[i].name.c_str(),
-            g_scripts[i].autoStart ? " [AUTO]" : ""
-        );
-    }
-
-    std::fclose(file);
-
-    CLEO64_LOG(
-        "Menu marker written: %s",
-        markerPath
-    );
-}
-
-static void write_menu_state()
-{
-    const char* statePath = get_menu_state_path();
-
-    FILE* file = std::fopen(statePath, "w");
-
-    if (file == nullptr)
-    {
-        CLEO64_LOG(
-            "Could not write menu state: %s",
-            statePath
-        );
-        return;
-    }
-
-    std::fprintf(file, "CLEO64 menu test\n");
-    std::fprintf(
-        file,
-        "Menu: %s\n",
-        g_menuOpen ? "OPEN" : "CLOSED"
-    );
-    std::fprintf(
-        file,
-        "Selected: %d\n",
-        g_selectedScript
-    );
+    std::fprintf(file, "CLEO64 ImGui selection\n");
 
     if (g_selectedScript >= 0 &&
         g_selectedScript <
@@ -226,110 +144,185 @@ static void write_menu_state()
     {
         std::fprintf(
             file,
-            "Selected script: %s\n",
+            "Selected: %s\n",
             g_scripts[g_selectedScript].name.c_str()
         );
     }
-
-    std::fprintf(file, "\nScripts:\n");
-
-    for (size_t i = 0; i < g_scripts.size(); ++i)
+    else
     {
-        std::fprintf(
-            file,
-            "%zu. %s%s\n",
-            i + 1,
-            g_scripts[i].name.c_str(),
-            g_scripts[i].autoStart ? " [AUTO]" : ""
-        );
+        std::fprintf(file, "Selected: none\n");
     }
 
     std::fclose(file);
+}
 
-    CLEO64_LOG(
-        "Menu state written: %s",
-        g_menuOpen ? "OPEN" : "CLOSED"
+static void render_cleo64_menu()
+{
+    if (g_imgui == nullptr || !g_menuOpen)
+        return;
+
+    const int screenWidth = g_imgui->GetScreenSizeX();
+    const int screenHeight = g_imgui->GetScreenSizeY();
+
+    g_imgui->SetNextWindowPos(
+        ImVec2(
+            screenWidth * 0.08f,
+            screenHeight * 0.08f
+        ),
+        ImGuiCond_Always
     );
+
+    g_imgui->SetNextWindowSize(
+        ImVec2(
+            screenWidth * 0.84f,
+            screenHeight * 0.78f
+        ),
+        ImGuiCond_Always
+    );
+
+    if (!g_imgui->Begin(
+        "CLEO64",
+        &g_menuOpen,
+        ImGuiWindowFlags_NoCollapse
+    ))
+    {
+        g_imgui->End();
+        return;
+    }
+
+    g_imgui->Text("CLEO64 ARM64 - Script Menu");
+
+    g_imgui->Text(
+        "Scripts found: %d",
+        static_cast<int>(g_scripts.size())
+    );
+
+    g_imgui->Separator();
+
+    if (g_imgui->Button("Refresh"))
+    {
+        scan_cleo_scripts();
+    }
+
+    g_imgui->SameLine();
+
+    if (g_imgui->Button("Close"))
+    {
+        g_menuOpen = false;
+    }
+
+    g_imgui->Separator();
+
+    for (size_t i = 0; i < g_scripts.size(); ++i)
+    {
+        const bool selected =
+            g_selectedScript == static_cast<int>(i);
+
+        std::string label = g_scripts[i].name;
+
+        if (g_scripts[i].autoStart)
+            label += " [AUTO]";
+
+        if (g_imgui->Selectable(
+            label.c_str(),
+            selected
+        ))
+        {
+            g_selectedScript =
+                static_cast<int>(i);
+
+            write_selection_marker();
+
+            CLEO64_LOG(
+                "Selected script: %s",
+                g_scripts[i].name.c_str()
+            );
+        }
+    }
+
+    if (g_selectedScript >= 0 &&
+        g_selectedScript <
+            static_cast<int>(g_scripts.size()))
+    {
+        g_imgui->Separator();
+
+        g_imgui->Text(
+            "Selected: %s",
+            g_scripts[g_selectedScript].name.c_str()
+        );
+
+        if (g_imgui->Button("Test selected"))
+        {
+            CLEO64_LOG(
+                "Test selected: %s",
+                g_scripts[g_selectedScript].name.c_str()
+            );
+        }
+    }
+
+    g_imgui->End();
 }
 
-static void open_menu_test()
+static void attach_imgui()
 {
-    g_menuOpen = true;
-    g_selectedScript = -1;
+    if (g_listenerRegistered)
+        return;
 
-    CLEO64_LOG("Test menu opened");
-    write_menu_state();
-}
+    g_imgui = static_cast<IImGui*>(
+        GetInterface("ImGui")
+    );
 
-static void close_menu_test()
-{
-    g_menuOpen = false;
-
-    CLEO64_LOG("Test menu closed");
-    write_menu_state();
-}
-
-static void select_script_test(int index)
-{
-    if (index < 0 ||
-        index >= static_cast<int>(g_scripts.size()))
+    if (g_imgui == nullptr)
     {
         CLEO64_LOG(
-            "Invalid script index: %d",
-            index
+            "AML_ImGui interface not found"
         );
         return;
     }
 
-    g_selectedScript = index;
-
-    CLEO64_LOG(
-        "Selected script: %s",
-        g_scripts[index].name.c_str()
+    g_imgui->AddRenderListener(
+        reinterpret_cast<void*>(
+            &render_cleo64_menu
+        )
     );
 
-    write_menu_state();
-}
+    g_listenerRegistered = true;
 
-__attribute__((constructor))
-static void cleo64_library_loaded()
-{
-    CLEO64_LOG("==============================");
-    CLEO64_LOG("CLEO64 library loaded");
-    CLEO64_LOG("ABI: arm64-v8a");
-    CLEO64_LOG("==============================");
+    CLEO64_LOG(
+        "CLEO64 attached to AML_ImGui"
+    );
 }
 
 ON_MOD_LOAD()
 {
-    CLEO64_LOG("CLEO64 OnModLoad entered");
+    CLEO64_LOG(
+        "CLEO64 OnModLoad started"
+    );
 
     if (logger != nullptr)
     {
         logger->SetTag("CLEO64");
-        logger->Info("CLEO64 menu backend starting");
+        logger->Info(
+            "CLEO64 ImGui consumer loading"
+        );
     }
 
     scan_cleo_scripts();
-    write_menu_marker();
-
-    // เปิดสถานะเมนูทดสอบ
-    // ตอนนี้ยังเป็น backend marker ยังไม่ใช่ UI บนหน้าจอ
-    open_menu_test();
+    attach_imgui();
 
     if (logger != nullptr)
     {
-        logger->Info(
-            "CLEO64 found %zu script(s)",
-            g_scripts.size()
-        );
-
-        logger->Info(
-            "CLEO64 menu backend ready"
-        );
+        if (g_imgui != nullptr)
+        {
+            logger->Info(
+                "AML_ImGui interface found"
+            );
+        }
+        else
+        {
+            logger->Error(
+                "AML_ImGui interface not found"
+            );
+        }
     }
-
-    CLEO64_LOG(
-        "CLEO64 initialization finished"
-    );
 }
