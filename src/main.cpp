@@ -12,7 +12,7 @@
 #include <mod/logger.h>
 #include <mod/interface.h>
 
-#include <iimgui.h>
+#include <imgui/iimgui.h>
 
 #define CLEO64_TAG "CLEO64"
 
