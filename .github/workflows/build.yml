@@ -18,7 +18,7 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Download AML template
+      - name: Download AML source
         shell: bash
         run: |
           set -e
@@ -32,13 +32,32 @@ jobs:
           test -f aml-src/template_of_mod/mod/logger.cpp
 
           mkdir -p aml-include
-          cp -R aml-src/template_of_mod/mod aml-include/
+
+          cp -R \
+            aml-src/template_of_mod/mod \
+            aml-include/
 
           test -f aml-include/mod/amlmod.h
           test -f aml-include/mod/logger.h
           test -f aml-include/mod/logger.cpp
 
-          echo "AML template copied successfully"
+      - name: Download AML_ImGui interface header
+        shell: bash
+        run: |
+          set -e
+
+          git clone --depth 1 \
+            https://github.com/AndroidModLoader/AML_ImGui.git \
+            imgui-src
+
+          test -f imgui-src/iimgui.h
+
+          mkdir -p aml-include/imgui
+
+          cp imgui-src/iimgui.h \
+            aml-include/imgui/iimgui.h
+
+          test -f aml-include/imgui/iimgui.h
 
       - name: Locate Android SDK tools
         shell: bash
@@ -50,7 +69,8 @@ jobs:
           elif [ -x "$ANDROID_SDK_ROOT/cmdline-tools/16.0/bin/sdkmanager" ]; then
             SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/16.0/bin/sdkmanager"
           else
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" \
+            SDKMANAGER="$(find \
+              "$ANDROID_SDK_ROOT/cmdline-tools" \
               -name sdkmanager \
               -type f \
               | head -n 1)"
@@ -60,9 +80,8 @@ jobs:
           test -x "$SDKMANAGER"
 
           echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
-          echo "Using SDK manager: $SDKMANAGER"
 
-      - name: Install required Android packages
+      - name: Install Android packages
         shell: bash
         run: |
           set -e
@@ -87,7 +106,7 @@ jobs:
             --sdk_root="$ANDROID_SDK_ROOT" \
             "ndk;26.3.11579264"
 
-      - name: Set Android NDK path
+      - name: Set NDK path
         shell: bash
         run: |
           set -e
@@ -97,7 +116,6 @@ jobs:
           test -d "$NDK_DIR"
 
           echo "ANDROID_NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
-          echo "NDK found at: $NDK_DIR"
 
       - name: Check project files
         shell: bash
@@ -109,8 +127,7 @@ jobs:
           test -f aml-include/mod/amlmod.h
           test -f aml-include/mod/logger.h
           test -f aml-include/mod/logger.cpp
-
-          echo "All project files found"
+          test -f aml-include/imgui/iimgui.h
 
       - name: Configure ARM64 build
         shell: bash
@@ -139,11 +156,6 @@ jobs:
         run: |
           set -e
 
-          find build-arm64 \
-            -type f \
-            -name "*.so" \
-            -print
-
           test -f build-arm64/out/libcleo64.so
 
           file build-arm64/out/libcleo64.so
@@ -151,9 +163,9 @@ jobs:
           readelf -h build-arm64/out/libcleo64.so \
             | grep -E "Class|Machine"
 
-      - name: Upload ARM64 library
+      - name: Upload CLEO64 library
         uses: actions/upload-artifact@v4
         with:
-          name: cleo64-arm64
+          name: cleo64-arm64-imgui-consumer
           path: build-arm64/out/libcleo64.so
           if-no-files-found: error
