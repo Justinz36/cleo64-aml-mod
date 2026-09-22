@@ -1,4 +1,4 @@
-name: Test GitHub Runner
+name: Test Runner
 
 on:
   workflow_dispatch:
@@ -12,4 +12,3 @@ jobs:
         run: |
           echo "Runner started successfully"
           uname -a
-          echo "GitHub Actions is working"
