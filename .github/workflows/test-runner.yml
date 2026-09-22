@@ -1,0 +1,15 @@
+name: Test GitHub Runner
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Test runner
+        run: |
+          echo "Runner started successfully"
+          uname -a
+          echo "GitHub Actions is working"
